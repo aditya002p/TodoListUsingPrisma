@@ -1,7 +1,6 @@
 "use client";
-
 import React, { useState, useEffect } from "react";
-import { useClientSide } from "@/hooks/useClientSide";
+import { api } from "../utils/api";
 import {
   Container,
   Grid,
@@ -47,6 +46,15 @@ interface TodoItemProps {
 const STATUSES = ["Todo", "In Progress", "Done"] as const;
 type Status = (typeof STATUSES)[number];
 
+// Helper function for consistent date formatting
+const formatDate = (date: string) => {
+  return new Date(date).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
 // Draggable Todo Item Component
 const TodoItem: React.FC<TodoItemProps> = ({ todo, onEdit, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
@@ -69,7 +77,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, onEdit, onDelete }) => {
         <div className="flex-grow cursor-grab">
           <Typography className="font-medium">{todo.text}</Typography>
           <Typography variant="caption" className="text-gray-500">
-            {new Date(todo.createdAt).toLocaleDateString()}
+            {formatDate(todo.createdAt)}
           </Typography>
         </div>
         <div className="flex space-x-1 ml-2">
@@ -145,9 +153,38 @@ const Column: React.FC<{
   );
 };
 
-// Main App Component
+// Error Boundary Component
+const ErrorBoundary: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    const handleError = (error: ErrorEvent) => {
+      console.error("Error caught by boundary:", error);
+      setHasError(true);
+    };
+
+    window.addEventListener("error", handleError);
+    return () => window.removeEventListener("error", handleError);
+  }, []);
+
+  if (hasError) {
+    return (
+      <Container>
+        <Typography color="error">
+          Something went wrong. Please refresh the page.
+        </Typography>
+      </Container>
+    );
+  }
+
+  return <>{children}</>;
+};
+
+// Main TodoApp Component
 const TodoApp: React.FC = () => {
-  const isClient = useClientSide();
+  const [mounted, setMounted] = useState(false);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [open, setOpen] = useState(false);
   const [inputText, setInputText] = useState("");
@@ -166,15 +203,23 @@ const TodoApp: React.FC = () => {
     })
   );
 
+  // Handle mounting
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Fetch todos after mounting
+  useEffect(() => {
+    if (mounted) {
+      fetchTodos();
+    }
+  }, [mounted]);
+
   const fetchTodos = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await fetch("/api/todos");
-      if (!response.ok) {
-        throw new Error("Failed to fetch todos");
-      }
-      const data = await response.json();
+      const data = await api.get("/api/todos");
       setTodos(data);
     } catch (error) {
       setError(error instanceof Error ? error.message : "An error occurred");
@@ -184,51 +229,27 @@ const TodoApp: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (isClient) {
-      fetchTodos();
-    }
-  }, [isClient]);
-
   const handleAddTodo = async () => {
     if (!inputText.trim()) return;
 
     try {
       setError(null);
       if (editingTodo) {
-        const response = await fetch("/api/todos", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: editingTodo.id,
-            text: inputText.trim(),
-            status: editingTodo.status,
-          }),
+        const updatedTodo = await api.put("/api/todos", {
+          id: editingTodo.id,
+          text: inputText.trim(),
+          status: editingTodo.status,
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to update todo");
-        }
-
-        const updatedTodo = await response.json();
         setTodos(
           todos.map((todo) => (todo.id === editingTodo.id ? updatedTodo : todo))
         );
       } else {
-        const response = await fetch("/api/todos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: inputText.trim(),
-            status: "Todo",
-          }),
+        const newTodo = await api.post("/api/todos", {
+          text: inputText.trim(),
+          status: "Todo",
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to create todo");
-        }
-
-        const newTodo = await response.json();
         setTodos((prevTodos) => [...prevTodos, newTodo]);
       }
 
@@ -256,13 +277,7 @@ const TodoApp: React.FC = () => {
     if (todoToDelete) {
       try {
         setError(null);
-        const response = await fetch(`/api/todos?id=${todoToDelete}`, {
-          method: "DELETE",
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to delete todo");
-        }
+        await api.delete(`/api/todos?id=${todoToDelete}`);
 
         setTodos((prevTodos) =>
           prevTodos.filter((todo) => todo.id !== todoToDelete)
@@ -298,21 +313,12 @@ const TodoApp: React.FC = () => {
         const todoToUpdate = todos.find((todo) => todo.id === activeId);
         if (!todoToUpdate) return;
 
-        const response = await fetch("/api/todos", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: activeId,
-            text: todoToUpdate.text,
-            status: overId as Status,
-          }),
+        const updatedTodo = await api.put("/api/todos", {
+          id: activeId,
+          text: todoToUpdate.text,
+          status: overId as Status,
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to update todo status");
-        }
-
-        const updatedTodo = await response.json();
         setTodos((currentTodos) =>
           currentTodos.map((todo) =>
             todo.id === activeId ? updatedTodo : todo
@@ -335,12 +341,9 @@ const TodoApp: React.FC = () => {
     setInputText("");
   };
 
-  if (!isClient) {
-    return (
-      <Container maxWidth="lg" className="mt-8">
-        <Typography>Loading...</Typography>
-      </Container>
-    );
+  // Early return for SSR
+  if (!mounted) {
+    return null;
   }
 
   if (isLoading) {
@@ -442,4 +445,13 @@ const TodoApp: React.FC = () => {
   );
 };
 
-export default TodoApp;
+// Wrapper component with error boundary
+const TodoAppWrapper: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <TodoApp />
+    </ErrorBoundary>
+  );
+};
+
+export default TodoAppWrapper;
