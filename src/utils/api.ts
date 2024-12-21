@@ -1,15 +1,20 @@
 const getBaseUrl = () => {
-  return process.env.NEXT_PUBLIC_API_URL || "";
-
-  // client side
-  return window.location.origin;
+  return process.env.NEXT_PUBLIC_API_URL || process.env.VERCEL_URL || "";
 };
 
 export const api = {
   get: async (endpoint: string) => {
-    const response = await fetch(`${getBaseUrl()}${endpoint}`);
+    const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    });
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `API Error: ${response.statusText} - ${JSON.stringify(errorData)}`
+      );
     }
     return response.json();
   },
@@ -23,7 +28,10 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `API Error: ${response.statusText} - ${JSON.stringify(errorData)}`
+      );
     }
     return response.json();
   },
@@ -37,7 +45,10 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `API Error: ${response.statusText} - ${JSON.stringify(errorData)}`
+      );
     }
     return response.json();
   },
@@ -47,7 +58,10 @@ export const api = {
       method: "DELETE",
     });
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `API Error: ${response.statusText} - ${JSON.stringify(errorData)}`
+      );
     }
     return response.json();
   },
